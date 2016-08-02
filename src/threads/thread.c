@@ -24,6 +24,10 @@
    that are ready to run but not actually running. */
 static struct list ready_list;
 
+/* List of threads for avoiding unnecesary yield*/
+struct list wakeup_list;
+int wakeup_list_size;
+
 /* List of all processes.  Processes are added to this list
    when they are first scheduled and removed when they exit. */
 static struct list all_list;
@@ -91,7 +95,10 @@ thread_init (void)
 
   lock_init (&tid_lock);
   list_init (&ready_list);
+  list_init (&wakeup_list);
   list_init (&all_list);
+
+  wakeup_list_size = 0;
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -99,6 +106,27 @@ thread_init (void)
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
 }
+/* Gets the wakeup list */
+
+struct list *getWakeupList(void)
+{
+    return &wakeup_list;
+}
+
+/* Gets the size of wakeup list */
+
+int getSizeOfWakeupList(void)
+{
+    return wakeup_list_size;
+}
+
+/* Sets the size of wakeup list */
+
+void setSizeOfWakeupList(int _size)
+{
+    wakeup_list_size = _size;
+}
+
 
 /* Starts preemptive thread scheduling by enabling interrupts.
    Also creates the idle thread. */
@@ -311,14 +339,16 @@ thread_yield (void)
 {
   struct thread *cur = thread_current ();
   enum intr_level old_level;
+
+//  msg("Current Thread : %s", cur->name);
   
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
   if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+    list_push_back (&ready_list, &cur->elem);   // elem : list element
   cur->status = THREAD_READY;
-  schedule ();
+  schedule();
   intr_set_level (old_level);
 }
 

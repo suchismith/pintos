@@ -66,9 +66,9 @@ test_sleep (int thread_cnt, int iterations)
   msg ("sleep duration will appear in nondescending order.");
 
   /* Allocate memory. */
-  threads = malloc (sizeof *threads * thread_cnt);
-  output = malloc (sizeof *output * iterations * thread_cnt * 2);
-  if (threads == NULL || output == NULL)
+  threads = malloc (sizeof *threads * thread_cnt);                  // Making threads
+  output = malloc (sizeof *output * iterations * thread_cnt * 2);   // ???
+  if (threads == NULL || output == NULL)   // If there is no thread
     PANIC ("couldn't allocate memory for test");
 
   /* Initialize test. */
@@ -81,8 +81,12 @@ test_sleep (int thread_cnt, int iterations)
   ASSERT (output != NULL);
   for (i = 0; i < thread_cnt; i++)
     {
-      struct sleep_thread *t = threads + i;
+      struct sleep_thread *t = threads + i;         // Indicates the each thread address
       char name[16];
+
+//        char buf[10];
+//        itoa(i, buf, 10);
+//        strcat(name, buf);
       
       t->test = &test;
       t->id = i;
@@ -96,9 +100,13 @@ test_sleep (int thread_cnt, int iterations)
   /* Wait long enough for all the threads to finish. */
   timer_sleep (100 + thread_cnt * iterations * 10 + 100);
 
+  msg("*************************************");
+
   /* Acquire the output lock in case some rogue thread is still
      running. */
   lock_acquire (&test.output_lock);
+
+
 
   /* Print completion order. */
   product = 0;
@@ -108,7 +116,7 @@ test_sleep (int thread_cnt, int iterations)
       int new_prod;
 
       ASSERT (*op >= 0 && *op < thread_cnt);
-      t = threads + *op;
+      t = threads + *op;        // threads variable corresponds each thread
 
       new_prod = ++t->iterations * t->duration;
         
@@ -144,9 +152,9 @@ sleeper (void *t_)
   for (i = 1; i <= test->iterations; i++) 
     {
       int64_t sleep_until = test->start + i * t->duration;
-      timer_sleep (sleep_until - timer_ticks ());
-      lock_acquire (&test->output_lock);
-      *test->output_pos++ = t->id;
+      timer_sleep (sleep_until - timer_ticks ());   // Actually, the thread has to sleep during this time.
+      lock_acquire (&test->output_lock);  /* Lock protecting output buffer. */
+      *test->output_pos++ = t->id;        /* Current position in output buffer. */      
       lock_release (&test->output_lock);
     }
 }
