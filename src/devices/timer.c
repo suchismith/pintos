@@ -24,8 +24,7 @@ static int64_t ticks;
    Initialized by timer_calibrate(). */
 static unsigned loops_per_tick;
 
-//static bool less_wakeup(const struct list_elem *_a, const struct list_elem *_b, void *_aux UNUSED);
-static bool less_wakeup (const struct list_elem* a_, const struct list_elem* b_, void* aux UNUSED);
+static bool lessSort (const struct list_elem* a_, const struct list_elem* b_, void* aux UNUSED);
 static intr_handler_func timer_interrupt;
 static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
@@ -115,24 +114,34 @@ void timer_wakeup(void)
     }
 }
 
-static bool
-less_wakeup (const struct list_elem* _a, const struct list_elem* _b, 
-                       void* aux UNUSED) 
+static bool lessSort (const struct list_elem* _newElem, const struct list_elem* _originElem, 
+        void* _aux UNUSED) 
 {
-  const struct thread* a = list_entry(_a, struct thread, elem);
-  const struct thread* b = list_entry(_b, struct thread, elem);
-  
-  if (a->wakeup_ticks < b->wakeup_ticks)
-    return true;
-  else if (a->wakeup_ticks == b->wakeup_ticks)
-  {
-      if(a->priority > b->priority)
-        return false;
-      else
+    const struct thread* newElem = list_entry(_newElem, struct thread, elem);
+    const struct thread* originElem = list_entry(_originElem, struct thread, elem);
+
+    // Sort threads about wakeup ticks
+    if (newElem->wakeup_ticks < originElem->wakeup_ticks)
+    {
         return true;
     }
-  else
-    return false;  
+
+    else if (newElem->wakeup_ticks == originElem->wakeup_ticks)
+    {
+        // Sort threads about priority
+        if(newElem->priority > originElem->priority)
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+    else
+    {
+        return false;  
+    }
 }
 
 
@@ -150,7 +159,7 @@ timer_sleep (int64_t ticks)
     cur_thread->wakeup_ticks = start + ticks;
 
 //    list_push_back (wake_list, &cur_thread->elem);
-    list_insert_ordered(wake_list, &cur_thread->elem, less_wakeup, NULL);
+    list_insert_ordered(wake_list, &cur_thread->elem, lessSort, NULL);
 
 //    msg("Current Thread : %s", cur_thread->name);
 //    msg("Size of Wakeup List : %d", getSizeOfWakeupList());
