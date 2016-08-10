@@ -24,15 +24,13 @@ static int64_t ticks;
    Initialized by timer_calibrate(). */
 static unsigned loops_per_tick;
 
-static bool lessSort (const struct list_elem* a_, const struct list_elem* b_, void* aux UNUSED);
+
+void timer_wakeup(void);
 static intr_handler_func timer_interrupt;
 static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 static void real_time_delay (int64_t num, int32_t denom);
-
-//struct list wakeup_list;
-//static int wakeup_list_size = 0;
 
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
@@ -113,37 +111,6 @@ void timer_wakeup(void)
         }
     }
 }
-
-static bool lessSort (const struct list_elem* _newElem, const struct list_elem* _originElem, 
-        void* _aux UNUSED) 
-{
-    const struct thread* newElem = list_entry(_newElem, struct thread, elem);
-    const struct thread* originElem = list_entry(_originElem, struct thread, elem);
-
-    // Sort threads about wakeup ticks
-    if (newElem->wakeup_ticks < originElem->wakeup_ticks)
-    {
-        return true;
-    }
-
-    else if (newElem->wakeup_ticks == originElem->wakeup_ticks)
-    {
-        // Sort threads about priority
-        if(newElem->priority > originElem->priority)
-        {
-            return true;
-        }
-        else
-        {
-            return false;
-        }
-    }
-    else
-    {
-        return false;  
-    }
-}
-
 
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */

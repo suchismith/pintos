@@ -88,6 +88,14 @@ struct thread
     char name[16];                      /* Name (for debugging purposes). */
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
+    int prev_priority;
+    int donate_count;
+
+    struct thread *donate_thread;       // Points the next priority donation
+
+    struct lock *trying_lock;
+    struct list lock_list;
+
     struct list_elem allelem;           /* List element for all threads list. */
 
     /* Shared between thread.c and synch.c. */
@@ -109,9 +117,22 @@ struct thread
    Controlled by kernel command-line option "-o mlfqs". */
 extern bool thread_mlfqs;
 
+/**********************************************************************
+ *
+ *  These functions are made by Shumin for resolving problems
+ *
+********************************************************************** */
+
+void recoverDonatePriorityLock(struct lock *_lock);
+void donatePriorityLock(struct lock *_lock);
+struct list *getReadyList(void);
+void printElemOfList(struct list *_list);
+bool higherSort (const struct list_elem* _newElem, const struct list_elem* _originElem, void *_aux UNUSED);
+bool lessSort (const struct list_elem* a_, const struct list_elem* b_, void* aux UNUSED);
 struct list *getWakeupList(void);
 int getSizeOfWakeupList(void);
 void setSizeOfWakeupList(int _size);
+
 
 void thread_init (void);
 void thread_start (void);
