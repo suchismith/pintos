@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "fixed_point.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -103,6 +104,9 @@ struct thread
 
     int64_t wakeup_ticks;                   // This is for wake up at wakeup list
 
+    int nice_value;
+    fixed_point recent_cpu;
+
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
@@ -117,6 +121,8 @@ struct thread
    Controlled by kernel command-line option "-o mlfqs". */
 extern bool thread_mlfqs;
 
+
+
 /**********************************************************************
  *
  *  These functions are made by Shumin for resolving problems
@@ -126,12 +132,22 @@ extern bool thread_mlfqs;
 void recoverDonatePriorityLock(struct lock *_lock);
 void donatePriorityLock(struct lock *_lock);
 struct list *getReadyList(void);
-void printElemOfList(struct list *_list);
+//void printElemOfList(struct list *_list);
+bool semaSort (const struct list_elem* _newElem, const struct list_elem* _originElem, void *_aux UNUSED);
 bool higherSort (const struct list_elem* _newElem, const struct list_elem* _originElem, void *_aux UNUSED);
 bool lessSort (const struct list_elem* a_, const struct list_elem* b_, void* aux UNUSED);
 struct list *getWakeupList(void);
 int getSizeOfWakeupList(void);
 void setSizeOfWakeupList(int _size);
+
+/*******************************************************
+ *_     mlfqs Functions
+ * ***************************************************/
+
+void refreshMlfqs(void);
+void increaseRecentCpuMlfqs(void);
+void updatePriorityOnMlfqs(struct thread *_thread);
+void calculateRecentCPUMlfqs(struct thread *_thread);
 
 
 void thread_init (void);

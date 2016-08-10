@@ -212,6 +212,22 @@ timer_interrupt (struct intr_frame *args UNUSED)
   ticks++;
   timer_wakeup();
   thread_tick ();
+
+  if(thread_mlfqs)
+  {
+//      increaseRecentCpuMlfqs();
+
+      // This section runs one time per one second
+      if(ticks % TIMER_FREQ == 0)
+      {
+
+      }
+      else if(ticks % 4 == 0)
+      {
+
+      }
+
+  }
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
