@@ -215,18 +215,17 @@ timer_interrupt (struct intr_frame *args UNUSED)
 
   if(thread_mlfqs)
   {
-//      increaseRecentCpuMlfqs();
+      increaseRecentCpuMlfqs();
 
       // This section runs one time per one second
       if(ticks % TIMER_FREQ == 0)
       {
-
+            refreshMlfqs();
       }
       else if(ticks % 4 == 0)
       {
-
+            updatePriorityOnMlfqs(thread_current());
       }
-
   }
 }
 
