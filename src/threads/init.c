@@ -70,7 +70,8 @@ static void locate_block_devices (void);
 static void locate_block_device (enum block_type, const char *name);
 #endif
 
-int main (void) NO_RETURN;
+//int main (void) NO_RETURN;
+int main (void);
 
 /* Pintos main program. */
 int
@@ -135,6 +136,8 @@ main (void)
   /* Finish up. */
   shutdown ();
   thread_exit ();
+
+  return 0;
 }
 
 /* Clear the "BSS", a segment that should be initialized to

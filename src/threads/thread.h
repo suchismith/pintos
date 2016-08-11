@@ -132,10 +132,9 @@ extern bool thread_mlfqs;
 void recoverDonatePriorityLock(struct lock *_lock);
 void donatePriorityLock(struct lock *_lock);
 struct list *getReadyList(void);
-//void printElemOfList(struct list *_list);
 bool semaSort (const struct list_elem* _newElem, const struct list_elem* _originElem, void *_aux UNUSED);
-bool higherSort (const struct list_elem* _newElem, const struct list_elem* _originElem, void *_aux UNUSED);
-bool lessSort (const struct list_elem* a_, const struct list_elem* b_, void* aux UNUSED);
+bool lockHigherSort (const struct list_elem* _newElem, const struct list_elem* _originElem, void *_aux UNUSED);
+bool threadLessSort (const struct list_elem* a_, const struct list_elem* b_, void* aux UNUSED);
 struct list *getWakeupList(void);
 int getSizeOfWakeupList(void);
 void setSizeOfWakeupList(int _size);
@@ -144,10 +143,10 @@ void setSizeOfWakeupList(int _size);
  *_     mlfqs Functions
  * ***************************************************/
 
-void refreshMlfqs(void);
-void increaseRecentCpuMlfqs(void);
-void updatePriorityOnMlfqs(struct thread *_thread);
-void calculateRecentCPUMlfqs(struct thread *_thread);
+void mlfqsRefresh(void);
+void mlfqsIncrease_recent_cpu(void);
+void mlfqsUpdatePriority(struct thread *_thread);
+void mlfqsCal_recent_cpu(struct thread *_thread);
 
 
 void thread_init (void);

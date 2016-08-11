@@ -64,20 +64,27 @@ static unsigned thread_ticks;   /* # of timer ticks since last yield. */
    Controlled by kernel command-line option "-o mlfqs". */
 bool thread_mlfqs;
 
+/**********************************************************************
+ *
+ *  These functions are made by Shumin for resolving problems
+ *
+ ********************************************************************** */
+
 fixed_point load_avg;
 
-void refreshMlfqs(void);
-void increaseRecentCpuMlfqs(void);
-void calculateRecentCPUMlfqs(struct thread *_thread);
-void updatePriorityOnMlfqs(struct thread *_thread);
+void mlfqsRefresh(void);
+void mlfqsIncrease_recent_cpu(void);
+void mlfqsCal_recent_cpu(struct thread *_thread);
+void mlfqsUpdatePriority(struct thread *_thread);
 void donatePriorityLock(struct lock *_lock);
 void recoverDonatePriorityLock(struct lock *_lock);
-//void printElemOfList(struct list *_list);
 bool semaSort (const struct list_elem* _newElem, const struct list_elem* _originElem, void *_aux UNUSED);
-bool higherSort (const struct list_elem* _newElem, const struct list_elem* _originElem, void *_aux UNUSED);
-bool lessSort (const struct list_elem* a_, const struct list_elem* b_, void* aux UNUSED);
-static void kernel_thread (thread_func *, void *aux);
+bool lockHigherSort (const struct list_elem* _newElem, const struct list_elem* _originElem, void *_aux UNUSED);
+bool threadLessSort (const struct list_elem* a_, const struct list_elem* b_, void* aux UNUSED);
 
+/////////////////////////////////////////////////////////////////////////
+
+static void kernel_thread (thread_func *, void *aux);
 static void idle (void *aux UNUSED);
 static struct thread *running_thread (void);
 static struct thread *next_thread_to_run (void);
@@ -118,130 +125,6 @@ thread_init (void)
     init_thread (initial_thread, "main", PRI_DEFAULT);
     initial_thread->status = THREAD_RUNNING;
     initial_thread->tid = allocate_tid ();
-}
-
-/* Gets the ready list */
-
-struct list *getReadyList(void)
-{
-    return &ready_list;
-}
-
-/* Gets the wakeup list */
-
-struct list *getWakeupList(void)
-{
-    return &wakeup_list;
-}
-
-/* Gets the size of wakeup list */
-
-int getSizeOfWakeupList(void)
-{
-    return wakeup_list_size;
-}
-
-/* Sets the size of wakeup list */
-
-void setSizeOfWakeupList(int _size)
-{
-    wakeup_list_size = _size;
-}
-/********************************************
- *  Refresh load_avg and recent_cpu
- *******************************************/
-void refreshMlfqs(void)
-{
-    ASSERT(thread_mlfqs);
-    ASSERT(intr_context());
-
-    size_t ready_threads = list_size(&ready_list);
-
-    if(thread_current() != idle_thread)
-    {
-        ready_threads++;
-    }
-
-    load_avg = FP_ADD(FP_DIV_MIX(FP_MULT_MIX(load_avg,59), 60), 
-            FP_DIV_MIX(FP_CONST(ready_threads),60));
-
-    struct thread *cur;
-    struct list_elem *e = list_begin(&all_list);
-
-    for(; e != list_end(&all_list); e = list_next(e))
-    {
-        cur = list_entry(e, struct thread, allelem);
-
-        if(cur != idle_thread)
-        {
-            updatePriorityOnMlfqs(cur);
-            calculateRecentCPUMlfqs(cur);
-        }
-    }
-}
-
-/********************************************
- * Increase the recent_cpu 
- *******************************************/
-void increaseRecentCpuMlfqs(void)
-{
-    struct thread *cur = thread_current();
-    ASSERT(thread_mlfqs);
-    ASSERT(intr_context());
-
-    if(cur == idle_thread)
-        return;
-
-    cur->recent_cpu = FP_ADD_MIX(cur->recent_cpu, 1);
-}
-
-
-/********************************************
- *
- *  calculate the recent cpu
- *  recent_cpu is fixed point type
- *
- *******************************************/
-
-void calculateRecentCPUMlfqs(struct thread *_thread)
-{
-    ASSERT(thread_mlfqs);
-    ASSERT(_thread != idle_thread);
-
-    fixed_point left_coef_term = FP_DIV(FP_MULT_MIX(load_avg,2),FP_ADD_MIX(FP_MULT_MIX(load_avg,2),1));
-    fixed_point left_var_term = FP_MULT(left_coef_term, _thread->recent_cpu);
-
-    _thread->recent_cpu = FP_ADD_MIX(left_var_term, _thread->nice_value);
-}
-/********************************************
- *
- * Update Priority of Thread on mlfqs
- *
- *******************************************/
-
-void updatePriorityOnMlfqs(struct thread *_thread)
-{
-    if(_thread == idle_thread)
-    {
-        return;
-    }
-
-    ASSERT(thread_mlfqs);
-    ASSERT(_thread != idle_thread);
-
-    fixed_point new_priority = FP_CONST(PRI_MAX);
-    new_priority = FP_SUB(new_priority, FP_DIV_MIX(_thread->recent_cpu,4));
-    new_priority = FP_SUB_MIX(new_priority, _thread->nice_value * 2);
-    _thread->priority = FP_INT_PART(new_priority);
-
-    if(new_priority > PRI_MAX)
-    {
-        _thread->priority = PRI_MAX;
-    }
-    else if(new_priority < PRI_MIN)
-    {
-        _thread->priority = PRI_MIN;
-    }
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -362,199 +245,6 @@ thread_create (const char *name, int priority,
     return tid;
 }
 
-/* ***************************************************
- *
- *    Back Donate a priority to current thread
- *
- * **************************************************/
-void recoverDonatePriorityLock(struct lock *_lock)
-{
-    if(thread_mlfqs == true)
-    {
-        return;
-    }
-
-    ASSERT(_lock != NULL);
-    enum intr_level old_level = intr_disable();
-
-    if(_lock->holder != NULL)
-    {
-        struct thread *cur = thread_current();
-        struct thread *highest_priority_thread;
-        struct lock *highest_priority_lock;
-
-        if(list_empty(&cur->lock_list) && cur->donate_count == 1) 
-        {
-            cur->priority = cur->prev_priority;
-
-            return;
-        }
-        else if(!list_empty(&cur->lock_list)) 
-        {
-            list_sort(&cur->lock_list, higherSort, NULL);
-            highest_priority_lock = list_entry(list_front(&cur->lock_list), struct lock, elem);
-
-            if(list_empty(&highest_priority_lock->semaphore.waiters))
-            {
-                cur->priority = cur->prev_priority;
-
-                return;
-            }
-
-            highest_priority_thread = list_entry(list_front(&highest_priority_lock->semaphore.waiters), struct thread, elem);
-
-            cur->priority = highest_priority_thread->priority;
-        }
-    }
-
-    intr_set_level(old_level);
-}
-
-/* ***************************************************
- *
- *    Donate a priority to current thread
- *
- * **************************************************/
-void donatePriorityLock(struct lock *_lock)
-{
-    if(thread_mlfqs == true)
-    {
-        return;
-    }
-
-    ASSERT(_lock != NULL);
-
-    // Check whether the lock is holded by any thread
-    if(_lock->holder != NULL)
-    {
-        struct thread *lock_holder_thread = _lock->holder;
-        struct thread *cur = thread_current();
-
-        // If lock holder's priority is less
-        if(cur->priority > lock_holder_thread->priority)
-        {
-            if(lock_holder_thread->donate_count == 0)
-            {
-                lock_holder_thread->prev_priority = lock_holder_thread->priority;
-                lock_holder_thread->donate_count = 1;
-            }
-
-            lock_holder_thread->priority = cur->priority;
-
-            if(lock_holder_thread->trying_lock != NULL)
-            {
-                donatePriorityLock(lock_holder_thread->trying_lock);
-            }
-
-        }
-    }
-}
-/* ***************************************************
- *
- *    Sorts the elements of semaphore from low priority to high priority
- *
- * **************************************************/
-bool semaSort (const struct list_elem* _newElem, const struct list_elem* _originElem,
-        void *_aux UNUSED)
-{
-    struct semaphore_elem* newElem = list_entry(_newElem, struct semaphore_elem, elem);
-    struct semaphore_elem* originElem = list_entry(_originElem, struct semaphore_elem, elem);
-
-    if(list_empty(&originElem->semaphore.waiters))
-    {
-        return false;
-    }
-    else if(list_empty(&newElem->semaphore.waiters))
-    {
-        return true;
-    }
-
-    const struct thread* newThreadElem = list_entry(list_front(&newElem->semaphore.waiters),
-            struct thread, elem);
-    const struct thread* originThreadElem = list_entry(list_front(&originElem->semaphore.waiters),
-            struct thread, elem);
-
-    // Sort threads about priority
-    if(newThreadElem->priority >= originThreadElem->priority)
-    {
-        return true;
-    }
-    else
-    {
-        return false;
-    }
-}
-
-/* ***************************************************
- *
- *    Sorts the elements of list from low priority to high priority
- *
- * **************************************************/
-bool higherSort (const struct list_elem* _newElem, const struct list_elem* _originElem,
-        void *_aux UNUSED)
-{
-    struct lock* newElem = list_entry(_newElem, struct lock, elem);
-    struct lock* originElem = list_entry(_originElem, struct lock, elem);
-
-    if(list_empty(&originElem->semaphore.waiters))
-    {
-        return true;
-    }
-    else if(list_empty(&newElem->semaphore.waiters))
-    {
-        return false;
-    }
-
-    const struct thread* newThreadElem = list_entry(list_front(&newElem->semaphore.waiters),
-            struct thread, elem);
-    const struct thread* originThreadElem = list_entry(list_front(&originElem->semaphore.waiters),
-            struct thread, elem);
-
-    // Sort threads about priority
-    if(newThreadElem->priority >= originThreadElem->priority)
-    {
-        return true;
-    }
-    else
-    {
-        return false;
-    }
-}
-
-
-/* ***************************************************
- *
- *    Sorts the elements of list from low priority to high priority 
- *
- * **************************************************/
-bool lessSort (const struct list_elem* _newElem, const struct list_elem* _originElem, 
-        void* _aux UNUSED) 
-{
-    const struct thread* newElem = list_entry(_newElem, struct thread, elem);
-    const struct thread* originElem = list_entry(_originElem, struct thread, elem);
-
-    // Sort threads about wakeup ticks
-    if (newElem->priority > originElem->priority)
-    {
-        return true;
-    }
-    else if(newElem->priority == originElem->priority)
-    {
-        if(newElem->wakeup_ticks < originElem->wakeup_ticks)
-        {
-            return true;
-        }
-        else
-        {
-            return false;
-        }
-    }
-    else
-    {
-        return false;  
-    }
-}
-
 /* Puts the current thread to sleep.  It will not be scheduled
    again until awoken by thread_unblock().
 
@@ -583,26 +273,16 @@ thread_block (void)
 thread_unblock (struct thread *t) 
 {
     enum intr_level old_level;
-//    struct thread *cur = thread_current();
+    //    struct thread *cur = thread_current();
 
     ASSERT (is_thread (t));
 
     old_level = intr_disable ();
     ASSERT (t->status == THREAD_BLOCKED);
-    list_insert_ordered(&ready_list, &t->elem, lessSort, NULL);
+    list_insert_ordered(&ready_list, &t->elem, threadLessSort, NULL);
     t->status = THREAD_READY;
     intr_set_level (old_level);
 
-    //  if(!intr_context())
-    //  {
-    //      if(cur != idle_thread)
-    //      {
-    //          if(cur->priority < t->priority)
-    //          {
-    //              thread_yield();
-    //          }
-    //      }
-    //  }
 }
 
 /* Returns the name of the running thread. */
@@ -673,7 +353,7 @@ thread_yield (void)
 
     old_level = intr_disable ();
     if (cur != idle_thread) 
-        list_insert_ordered(&ready_list, &cur->elem, lessSort, NULL);
+        list_insert_ordered(&ready_list, &cur->elem, threadLessSort, NULL);
     //    list_push_back (&ready_list, &cur->elem);   // elem : list element
 
     cur->status = THREAD_READY;
@@ -741,13 +421,9 @@ thread_set_nice (int _nice UNUSED)
 {
     enum intr_level old_level = intr_disable();
     /* Not yet implemented. */
-//    if(_nice > 20 || _nice < -20)
-//    {
-//        return;
-//    }
 
     thread_current()->nice_value = _nice;
-    updatePriorityOnMlfqs(thread_current());
+    mlfqsUpdatePriority(thread_current());
 
     if(!list_empty(&ready_list) && thread_current()->priority < 
             list_entry(list_front(&ready_list), struct thread, elem)->priority)
@@ -900,7 +576,7 @@ next_thread_to_run (void)
         return idle_thread;
     else
     {
-        list_sort(&ready_list, lessSort, NULL);
+        list_sort(&ready_list, threadLessSort, NULL);
         return list_entry (list_pop_front (&ready_list), struct thread, elem);
     }
 
@@ -992,3 +668,325 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+
+/**********************************************************************
+ *
+ *      Added a lot of functions for resolving tests
+ *
+ *********************************************************************/
+/* Gets the ready list */
+
+struct list *getReadyList(void)
+{
+    return &ready_list;
+}
+
+/* Gets the wakeup list */
+
+struct list *getWakeupList(void)
+{
+    return &wakeup_list;
+}
+
+/* Gets the size of wakeup list */
+
+int getSizeOfWakeupList(void)
+{
+    return wakeup_list_size;
+}
+
+/* Sets the size of wakeup list */
+
+void setSizeOfWakeupList(int _size)
+{
+    wakeup_list_size = _size;
+}
+/********************************************
+ *  Refresh load_avg and recent_cpu
+ *******************************************/
+void mlfqsRefresh(void)
+{
+    ASSERT(thread_mlfqs);
+    ASSERT(intr_context());
+
+    size_t ready_threads = list_size(&ready_list);
+
+    if(thread_current() != idle_thread)
+    {
+        ready_threads++;
+    }
+
+    load_avg = FP_ADD(FP_DIV_MIX(FP_MULT_MIX(load_avg,59), 60), 
+            FP_DIV_MIX(FP_CONST(ready_threads),60));
+
+    struct thread *cur;
+    struct list_elem *e = list_begin(&all_list);
+
+    for(; e != list_end(&all_list); e = list_next(e))
+    {
+        cur = list_entry(e, struct thread, allelem);
+
+        if(cur != idle_thread)
+        {
+            mlfqsUpdatePriority(cur);
+            mlfqsCal_recent_cpu(cur);
+        }
+    }
+}
+
+/********************************************
+ * Increase the recent_cpu 
+ *******************************************/
+void mlfqsIncrease_recent_cpu(void)
+{
+    struct thread *cur = thread_current();
+    ASSERT(thread_mlfqs);
+    ASSERT(intr_context());
+
+    if(cur == idle_thread)
+        return;
+
+    cur->recent_cpu = FP_ADD_MIX(cur->recent_cpu, 1);
+}
+
+
+/********************************************
+ *
+ *  calculate the recent cpu
+ *  recent_cpu is fixed point type
+ *
+ *******************************************/
+
+void mlfqsCal_recent_cpu(struct thread *_thread)
+{
+    ASSERT(thread_mlfqs);
+    ASSERT(_thread != idle_thread);
+
+    fixed_point left_coef_term = FP_DIV(FP_MULT_MIX(load_avg,2),FP_ADD_MIX(FP_MULT_MIX(load_avg,2),1));
+    fixed_point left_var_term = FP_MULT(left_coef_term, _thread->recent_cpu);
+
+    _thread->recent_cpu = FP_ADD_MIX(left_var_term, _thread->nice_value);
+}
+/********************************************
+ *
+ * Update Priority of Thread on mlfqs
+ *
+ *******************************************/
+
+void mlfqsUpdatePriority(struct thread *_thread)
+{
+    if(_thread == idle_thread)
+    {
+        return;
+    }
+
+    ASSERT(thread_mlfqs);
+    ASSERT(_thread != idle_thread);
+
+    fixed_point temp_nice_value = FP_CONST(_thread->nice_value);
+    fixed_point new_priority = FP_CONST(PRI_MAX);
+    new_priority = FP_SUB(new_priority, FP_DIV_MIX(_thread->recent_cpu,4));
+    new_priority = FP_SUB(new_priority, FP_MULT_MIX(temp_nice_value, 2));
+    _thread->priority = FP_INT_PART(new_priority);
+
+    if(new_priority > PRI_MAX)
+    {
+        _thread->priority = PRI_MAX;
+    }
+    else if(new_priority < PRI_MIN)
+    {
+        _thread->priority = PRI_MIN;
+    }
+}
+
+/* ***************************************************
+ *
+ *    Back Donate a priority to current thread
+ *
+ * **************************************************/
+void recoverDonatePriorityLock(struct lock *_lock)
+{
+    if(thread_mlfqs == true)
+    {
+        return;
+    }
+
+    ASSERT(_lock != NULL);
+    enum intr_level old_level = intr_disable();
+
+    if(_lock->holder != NULL)
+    {
+        struct thread *cur = thread_current();
+        struct thread *highest_priority_thread;
+        struct lock *highest_priority_lock;
+
+        if(list_empty(&cur->lock_list) && cur->donate_count == 1) 
+        {
+            cur->priority = cur->prev_priority;
+
+            return;
+        }
+        else if(!list_empty(&cur->lock_list)) 
+        {
+            list_sort(&cur->lock_list, lockHigherSort, NULL);
+            highest_priority_lock = list_entry(list_front(&cur->lock_list), struct lock, elem);
+
+            if(list_empty(&highest_priority_lock->semaphore.waiters))
+            {
+                cur->priority = cur->prev_priority;
+
+                return;
+            }
+
+            highest_priority_thread = list_entry(list_front(&highest_priority_lock->semaphore.waiters), struct thread, elem);
+
+            cur->priority = highest_priority_thread->priority;
+        }
+    }
+
+    intr_set_level(old_level);
+}
+
+/* ***************************************************
+ *
+ *    Donate a priority to current thread
+ *
+ * **************************************************/
+void donatePriorityLock(struct lock *_lock)
+{
+    if(thread_mlfqs == true)
+    {
+        return;
+    }
+
+    ASSERT(_lock != NULL);
+
+    // Check whether the lock is holded by any thread
+    if(_lock->holder != NULL)
+    {
+        struct thread *lock_holder_thread = _lock->holder;
+        struct thread *cur = thread_current();
+
+        // If lock holder's priority is less
+        if(cur->priority > lock_holder_thread->priority)
+        {
+            if(lock_holder_thread->donate_count == 0)
+            {
+                lock_holder_thread->prev_priority = lock_holder_thread->priority;
+                lock_holder_thread->donate_count = 1;
+            }
+
+            lock_holder_thread->priority = cur->priority;
+
+            if(lock_holder_thread->trying_lock != NULL)
+            {
+                donatePriorityLock(lock_holder_thread->trying_lock);
+            }
+
+        }
+    }
+}
+/* ***************************************************
+ *
+ *    Sorts the elements of semaphore from low priority to high priority
+ *
+ * **************************************************/
+bool semaSort (const struct list_elem* _newElem, const struct list_elem* _originElem,
+        void *_aux UNUSED)
+{
+    struct semaphore_elem* newElem = list_entry(_newElem, struct semaphore_elem, elem);
+    struct semaphore_elem* originElem = list_entry(_originElem, struct semaphore_elem, elem);
+
+    if(list_empty(&originElem->semaphore.waiters))
+    {
+        return false;
+    }
+    else if(list_empty(&newElem->semaphore.waiters))
+    {
+        return true;
+    }
+
+    const struct thread* newThreadElem = list_entry(list_front(&newElem->semaphore.waiters),
+            struct thread, elem);
+    const struct thread* originThreadElem = list_entry(list_front(&originElem->semaphore.waiters),
+            struct thread, elem);
+
+    // Sort threads about priority
+    if(newThreadElem->priority >= originThreadElem->priority)
+    {
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
+
+/* ***************************************************
+ *
+ *    Sorts the elements of list from low priority to high priority
+ *
+ * **************************************************/
+bool lockHigherSort (const struct list_elem* _newElem, const struct list_elem* _originElem,
+        void *_aux UNUSED)
+{
+    struct lock* newElem = list_entry(_newElem, struct lock, elem);
+    struct lock* originElem = list_entry(_originElem, struct lock, elem);
+
+    if(list_empty(&originElem->semaphore.waiters))
+    {
+        return true;
+    }
+    else if(list_empty(&newElem->semaphore.waiters))
+    {
+        return false;
+    }
+
+    const struct thread* newThreadElem = list_entry(list_front(&newElem->semaphore.waiters),
+            struct thread, elem);
+    const struct thread* originThreadElem = list_entry(list_front(&originElem->semaphore.waiters),
+            struct thread, elem);
+
+    // Sort threads about priority
+    if(newThreadElem->priority >= originThreadElem->priority)
+    {
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
+
+/* ***************************************************
+ *
+ *    Sorts the elements of list from low priority to high priority 
+ *
+ * **************************************************/
+bool threadLessSort (const struct list_elem* _newElem, const struct list_elem* _originElem, 
+        void* _aux UNUSED) 
+{
+    const struct thread* newElem = list_entry(_newElem, struct thread, elem);
+    const struct thread* originElem = list_entry(_originElem, struct thread, elem);
+
+    // Sort threads about wakeup ticks
+    if (newElem->priority > originElem->priority)
+    {
+        return true;
+    }
+    else if(newElem->priority == originElem->priority)
+    {
+        if(newElem->wakeup_ticks < originElem->wakeup_ticks)
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+    else
+    {
+        return false;  
+    }
+}
