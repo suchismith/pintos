@@ -71,6 +71,16 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
+/*************************************************************
+ **
+ **  Shumin added additional functions                                                                                               
+ **
+ ***************************************************************/
+
+struct thread *getThreadOftid(tid_t _id);                                                                                           
+void removeThreadOftid(tid_t _id);
+
+
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -459,17 +469,23 @@ is_thread (struct thread *t)
 static void
 init_thread (struct thread *t, const char *name, int priority)
 {
-  ASSERT (t != NULL);
-  ASSERT (PRI_MIN <= priority && priority <= PRI_MAX);
-  ASSERT (name != NULL);
+    ASSERT (t != NULL);
+    ASSERT (PRI_MIN <= priority && priority <= PRI_MAX);
+    ASSERT (name != NULL);
 
-  memset (t, 0, sizeof *t);
-  t->status = THREAD_BLOCKED;
-  strlcpy (t->name, name, sizeof t->name);
-  t->stack = (uint8_t *) t + PGSIZE;
-  t->priority = priority;
-  t->magic = THREAD_MAGIC;
-  list_push_back (&all_list, &t->allelem);
+    memset (t, 0, sizeof *t);
+    t->status = THREAD_BLOCKED;
+    strlcpy (t->name, name, sizeof t->name);
+    t->stack = (uint8_t *) t + PGSIZE;
+    t->priority = priority;
+    t->magic = THREAD_MAGIC;
+
+    list_init(&t->child_list);
+    t->prog_name = NULL;
+    sema_init(&t->sema, 0);
+    t->parent = NULL;
+
+    list_push_back (&all_list, &t->allelem);
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
@@ -585,3 +601,51 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+
+struct thread *getThreadOftid(tid_t _id)                                                                                            
+{
+    struct list_elem *e;
+    struct thread *dest_thread = NULL;
+    enum intr_level old_level;
+
+    old_level = intr_disable();
+
+    for(e = list_front(&all_list); e != list_end(&all_list); e = list_next(e))
+    {   
+        struct thread *t = list_entry(e, struct thread, allelem);
+        if(t->tid == _id)
+        {   
+            dest_thread = t;
+            break;
+        }
+    }
+    intr_set_level(old_level);
+
+    return dest_thread;
+}
+
+void removeThreadOftid(tid_t _id)
+{
+    struct list_elem *e;
+    struct thread *cur = thread_current();
+    enum intr_level old_level;
+
+    if(list_empty(&cur->child_list))
+        return;
+
+    old_level = intr_disable();
+
+    for(e = list_front(&cur->child_list); e != list_end(&cur->child_list); 
+            e = list_next(e))
+    {
+        struct thread *t = list_entry(e, struct thread, elem);
+        if(t->tid == _id)
+        {
+            list_remove(e);
+            return;
+        }
+    }
+
+    intr_set_level(old_level);
+}
+

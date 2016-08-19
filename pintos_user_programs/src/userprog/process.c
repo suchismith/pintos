@@ -17,6 +17,17 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "devices/timer.h"
+
+/*******************************************************************
+ *
+ *  Shumin added additional functions
+ *
+ *******************************************************************/
+static void extractCmdArg(char *_fromStr, char *_argv[], int *argc);
+static void extractCmdName(char *_toStr, char *_fromStr);
+
+
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -37,11 +48,18 @@ process_execute (const char *file_name)
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
+  char *program_name = (char *)malloc(strlen(fn_copy)+1);
+  extractCmdName(program_name, fn_copy);
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
+  {
     palloc_free_page (fn_copy); 
+    free(program_name);
+
+    return -1;
+  }
   return tid;
 }
 
@@ -88,6 +106,8 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
+    timer_sleep(100);
+
   return -1;
 }
 
@@ -195,7 +215,7 @@ struct Elf32_Phdr
 #define PF_W 2          /* Writable. */
 #define PF_R 4          /* Readable. */
 
-static bool setup_stack (void **esp);
+static bool setup_stack (void **esp, char *_argv[], int _argc);
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
@@ -215,6 +235,13 @@ load (const char *file_name, void (**eip) (void), void **esp)
   bool success = false;
   int i;
 
+  /* Adds the additional variable */
+  char file_name_copy[100];
+  strlcpy(file_name_copy, file_name, 100);
+  char *argv[NUMBER_OF_ARGV];
+  int argc;
+  extractCmdArg(file_name_copy, argv, &argc);
+
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
   if (t->pagedir == NULL) 
@@ -222,7 +249,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   process_activate ();
 
   /* Open executable file. */
-  file = filesys_open (file_name);
+  file = filesys_open (argv[0]);
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", file_name);
@@ -302,7 +329,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
     }
 
   /* Set up stack. */
-  if (!setup_stack (esp))
+  if (!setup_stack (esp, argv, argc))
     goto done;
 
   /* Start address. */
@@ -427,7 +454,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 /* Create a minimal stack by mapping a zeroed page at the top of
    user virtual memory. */
 static bool
-setup_stack (void **esp) 
+setup_stack (void **esp, char *_argv[], int _argc) 
 {
   uint8_t *kpage;
   bool success = false;
@@ -437,7 +464,32 @@ setup_stack (void **esp)
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
-        *esp = PHYS_BASE;
+      {
+          *esp = PHYS_BASE;
+          uint32_t *array[_argc]; // Initilize the array 
+
+          for(int i=0; i<_argc; i++)
+          {
+              *esp = *esp - (strlen(_argv[i])+1)*sizeof(char);
+              array[i] = (uint32_t *)*esp; // Assign address to array[i]
+              memcpy(*esp, _argv[i], strlen(_argv[i])+1); // Copies argument to stack memory
+          }
+          *esp = *esp - 4;    // make a indent???
+          (*(int *)*esp) = 0;   // initilize the current stack address
+
+          for(int i=0; i<_argc; i++)
+          {
+              *esp = *esp - 4;
+              (*(uint32_t **)*esp) = array[i]; // saves each address of argument                                                  
+          }
+          *esp = *esp - 4;
+          (*(uintptr_t **)*esp) = (*esp+4);     // saves address of argument save position on stack???
+
+          *esp = *esp - 4;
+          (*(int *)*esp) = _argc;    // saves the number of argument
+          *esp = *esp - 4;
+          (*(int *)*esp) = 0;
+      }
       else
         palloc_free_page (kpage);
     }
@@ -463,3 +515,24 @@ install_page (void *upage, void *kpage, bool writable)
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
+
+static void extractCmdName(char *_toStr, char *_fromStr)
+{
+    char *tmp;
+
+    strlcpy(_toStr, _fromStr, PGSIZE);
+    _toStr = strtok_r(_toStr, " ", &tmp);
+}
+
+
+static void extractCmdArg(char *_fromStr, char *_argv[], int *argc)
+{
+    char *tmp;
+    _argv[0] = strtok_r(_fromStr, " ", &tmp);
+    char *token;
+    *argc = 1;
+    while((token = strtok_r(NULL, " ", &tmp)) != NULL)
+    {
+        _argv[(*argc)++] = token;
+    }
+}  

@@ -533,7 +533,8 @@ sub run_vm {
     if ($sim eq 'bochs') {
 	run_bochs ();
     } elsif ($sim eq 'qemu') {
-	run_qemu ();
+	run_bochs ();
+#	run_qemu ();
     } elsif ($sim eq 'player') {
 	run_player ();
     } else {
